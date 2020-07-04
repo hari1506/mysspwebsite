@@ -1,0 +1,185 @@
+<html>
+<head>
+    <title>Register Your Visit</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.24.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+</head>
+<body>
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial;
+  background: url('bg_img.jpeg');
+  background-size: cover;
+}
+
+.header {
+  text-align: center;
+  padding: 32px;
+}
+
+.row {
+  display: -ms-flexbox; /* IE10 */
+  display: flex;
+  -ms-flex-wrap: wrap; /* IE10 */
+  flex-wrap: wrap;
+  padding: 0 4px;
+  margin: 0;
+}
+
+.thumbnail {
+    background-color: #b9a5a5;
+}
+</style>
+
+<!-- Header -->
+<div class="header">
+    <h1>Welcome to Techie's Challenge!</h1>
+    <p style="margin-top: 15px;">
+      <button id="register" type="button" class="btn btn-info btn-lg" data-backdrop="static" data-keyboard="false" data-toggle="modal" data-target="#myModal">Register Your Visit</button>
+    </p>
+</div>
+
+<img id="imgTest" src="">
+
+<!-- Image Grid -->
+<div id="images" class="row"></div>
+
+<!-- Modal -->
+<div id="myModal" class="modal fade" role="dialog">
+    <div class="modal-dialog">
+        <!-- Modal content-->
+        <div class="modal-content">
+            <div class="modal-header">
+                <button id="closeIcon" type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title">Profile Photo</h4>
+            </div>
+            <div class="modal-body">
+                <video id="player" autoplay width="100%"></video>
+                <button id="capture" type="button" class="btn btn-primary" style="margin-top: 5px;">Take a photo</button>
+            </div>
+            <div class="modal-footer">
+                <button id="closeButton" type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const registerButton = document.getElementById('register');
+    const closeIcon = document.getElementById('closeIcon');
+    const closeButton = document.getElementById('closeButton');
+    const player = document.getElementById('player');
+    const images = document.getElementById('images');
+    const captureButton = document.getElementById('capture');
+    const constraints = {
+      video: true,
+    };
+
+    AWS.config.update({ accessKeyId: '<access-key>', secretAccessKey: '<secret-key>' });
+    AWS.config.region = 'ap-south-1';
+    var bucket = new AWS.S3({ params: { Bucket: '<bucket-name>' } });
+
+    getAllImages();
+
+    registerButton.addEventListener('click', () => {
+      navigator.mediaDevices.getUserMedia(constraints)
+          .then((stream) => {
+              // Attach the video stream to the video element and autoplay.
+              player.srcObject = stream;
+          });
+    });
+
+    captureButton.addEventListener('click', () => {
+      createContext(320, 240);
+    });
+
+    function createContext(width, height) {
+      var canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      var context = canvas.getContext("2d");
+      context.drawImage(player, 0, 0, canvas.width, canvas.height);
+
+      var imageData = context.getImageData(0, 0, width, height);
+      typedArray = imageData.data;
+
+      uploadS3(canvas);
+
+      var html = '<div class="col-lg-3 col-sm-6"><div class="thumbnail"><img src="' + canvas.toDataURL() + '"></div></div>';
+      images.insertAdjacentHTML('beforeend', html);
+    }
+
+    function uploadS3(canvas) {
+      var date = new Date();
+      var timestamp = date.getTime();
+
+      var params = { Key: "sample_" + timestamp + ".png", ContentType: "image/png", Body: dataURItoBlob(canvas.toDataURL()) };
+      bucket.putObject(params, function (err, data) {
+        console.log(err ? 'ERROR!' : 'UPLOADED.');
+      });
+    }
+
+    function dataURItoBlob(dataURI) {
+      var binary = atob(dataURI.split(',')[1]);
+      var array = [];
+      for(var i = 0; i < binary.length; i++) {
+          array.push(binary.charCodeAt(i));
+      }
+      return new Blob([new Uint8Array(array)], {type: 'image/jpeg'});
+    }
+
+    function getAllImages() {
+      bucket.listObjects({Prefix: "sample_"}, function (err, data) {
+          if (err) {
+            console.log('ERROR! ' + err);
+          } else {
+            console.log('LOADED');
+
+            // 'this' references the AWS.Response instance that represents the response
+            var href = this.request.httpRequest.endpoint.href;
+            var bucketUrl = href + "myregistervisit/";
+
+            var photos = data.Contents.map(function(photo) {
+              var photoKey = photo.Key;
+              return displayImage(photoKey);
+            });
+          }
+      });
+    }
+
+    function displayImage(fileName) {
+      bucket.getObject({Key: fileName}, function (errtxt, file) {
+          if (errtxt) {
+              console.log('ERROR! ' + errtxt);
+          } else {
+              console.log('LOADED');
+              var html = '<div class="col-lg-3 col-sm-6"><div class="thumbnail"><img src="data:image/png;base64,' + encode(file.Body) + '"></div></div>';
+              images.insertAdjacentHTML('beforeend', html);
+          }
+      });
+    }
+
+    function encode(data) {
+        var str = data.reduce(function(a,b){ return a+String.fromCharCode(b) },'');
+        return btoa(str).replace(/.{76}(?=.)/g,'$&\n');
+    }
+
+    // Stop all video streams.
+    closeIcon.addEventListener('click', stopPlayer);
+    closeButton.addEventListener('click', stopPlayer);
+
+    function stopPlayer() {
+        player.srcObject.getVideoTracks().forEach(track => track.stop());
+    }
+</script>
+</body>
+</html>
